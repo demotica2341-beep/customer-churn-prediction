@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Churn Prediction Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg: #0a0d14;
+    --surface: #111520;
+    --surface2: #161b2e;
+    --border: #1e2540;
+    --accent: #4f6ef7;
+    --accent2: #7c3aed;
+    --green: #22c55e;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --muted: #64748b;
+    --text: #e2e8f0;
+    --text2: #94a3b8;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* Grid noise background */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 40px 40px;
+    opacity: 0.3;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrap { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 24px; }
+
+  /* Header */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 28px; padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .logo { display: flex; align-items: center; gap: 12px; }
+  .logo-icon {
+    width: 36px; height: 36px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+  h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
+  .subtitle { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+  .header-right { display: flex; align-items: center; gap: 16px; }
+  .badge {
+    padding: 4px 10px; border-radius: 20px; font-size: 11px; font-family: var(--mono);
+    font-weight: 500; letter-spacing: 0.5px;
+  }
+  .badge-live { background: rgba(34,197,94,0.12); color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
+  .badge-model { background: rgba(79,110,247,0.12); color: var(--accent); border: 1px solid rgba(79,110,247,0.3); }
+
+  /* KPI cards */
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  .kpi {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .kpi:hover { border-color: var(--accent); }
+  .kpi::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  }
+  .kpi.critical::before { background: var(--red); }
+  .kpi.high::before { background: var(--amber); }
+  .kpi.mrr::before { background: var(--accent); }
+  .kpi.model::before { background: var(--green); }
+  .kpi-label { font-size: 11px; color: var(--muted); font-family: var(--mono); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .kpi-value { font-size: 32px; font-weight: 600; font-family: var(--mono); letter-spacing: -1px; line-height: 1; }
+  .kpi-value.red { color: var(--red); }
+  .kpi-value.amber { color: var(--amber); }
+  .kpi-value.blue { color: var(--accent); }
+  .kpi-value.green { color: var(--green); }
+  .kpi-sub { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+  /* Charts row */
+  .charts { display: grid; grid-template-columns: 1.4fr 1fr 0.9fr; gap: 16px; margin-bottom: 24px; }
+  .chart-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .card-title { font-size: 13px; font-weight: 500; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; }
+  .chart-wrap { position: relative; height: 200px; }
+
+  /* Risk breakdown */
+  .risk-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .risk-label { width: 70px; font-size: 12px; font-family: var(--mono); }
+  .risk-bar-wrap { flex: 1; height: 8px; background: var(--surface2); border-radius: 4px; overflow: hidden; }
+  .risk-bar { height: 100%; border-radius: 4px; transition: width 0.8s ease; }
+  .risk-count { width: 50px; text-align: right; font-size: 12px; color: var(--muted); font-family: var(--mono); }
+
+  /* Table */
+  .table-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .table-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .search-input {
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 6px;
+    padding: 6px 12px; font-size: 12px; font-family: var(--mono);
+    outline: none; width: 200px;
+    transition: border-color 0.2s;
+  }
+  .search-input:focus { border-color: var(--accent); }
+  .filter-row {
+    display: flex; gap: 8px; padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .filter-btn {
+    padding: 4px 12px; border-radius: 20px; font-size: 11px;
+    font-family: var(--mono); cursor: pointer; border: 1px solid var(--border);
+    background: transparent; color: var(--muted); transition: all 0.2s;
+  }
+  .filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .filter-btn.active { background: rgba(79,110,247,0.15); border-color: var(--accent); color: var(--accent); }
+
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    text-align: left; padding: 10px 14px; font-size: 10px; font-family: var(--mono);
+    text-transform: uppercase; letter-spacing: 1px; color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    cursor: pointer; user-select: none;
+  }
+  th:hover { color: var(--text2); }
+  td { padding: 11px 14px; font-size: 12px; border-bottom: 1px solid rgba(30,37,64,0.5); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(79,110,247,0.04); }
+
+  .tier-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 10px; font-family: var(--mono); font-weight: 500; letter-spacing: 0.5px;
+  }
+  .tier-CRITICAL { background: rgba(239,68,68,0.15); color: #fca5a5; }
+  .tier-HIGH     { background: rgba(245,158,11,0.15); color: #fcd34d; }
+  .tier-MEDIUM   { background: rgba(79,110,247,0.15); color: #93c5fd; }
+  .tier-LOW      { background: rgba(34,197,94,0.10); color: #86efac; }
+
+  .prob-bar-cell { display: flex; align-items: center; gap: 8px; }
+  .prob-bar-bg { flex: 1; height: 4px; background: var(--surface2); border-radius: 2px; overflow: hidden; }
+  .prob-bar-fill { height: 100%; border-radius: 2px; }
+  .prob-val { width: 38px; text-align: right; font-family: var(--mono); font-size: 11px; }
+
+  .plan-tag {
+    display: inline-block; padding: 1px 7px; border-radius: 3px;
+    font-size: 10px; font-family: var(--mono); background: var(--surface2);
+    color: var(--text2); border: 1px solid var(--border);
+  }
+
+  .action-text { font-size: 11px; color: var(--muted); max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .pagination {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 20px; border-top: 1px solid var(--border);
+    font-size: 12px; color: var(--muted); font-family: var(--mono);
+  }
+  .page-btns { display: flex; gap: 6px; }
+  .page-btn {
+    padding: 4px 10px; border-radius: 4px; cursor: pointer;
+    border: 1px solid var(--border); background: transparent;
+    color: var(--text2); font-size: 11px; font-family: var(--mono);
+    transition: all 0.2s;
+  }
+  .page-btn:hover, .page-btn.active { background: rgba(79,110,247,0.15); border-color: var(--accent); color: var(--accent); }
+  .page-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  /* Footer */
+  footer {
+    margin-top: 24px; padding-top: 16px;
+    border-top: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 11px; color: var(--muted); font-family: var(--mono);
+  }
+
+  @media (max-width: 1100px) {
+    .kpis { grid-template-columns: repeat(2, 1fr); }
+    .charts { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="logo">
+      <div class="logo-icon">📉</div>
+      <div>
+        <h1>Churn Prediction Dashboard</h1>
+        <div class="subtitle">XGBoost · SaaS/Telecom · 30-day horizon</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <span class="badge badge-live">● LIVE</span>
+      <span class="badge badge-model">ROC-AUC 0.6275</span>
+      <span style="font-size:12px;color:var(--muted);font-family:var(--mono)">Scored: 5,000 customers</span>
+    </div>
+  </header>
+
+  <!-- KPI Cards -->
+  <div class="kpis">
+    <div class="kpi critical">
+      <div class="kpi-label">Critical risk</div>
+      <div class="kpi-value red">233</div>
+      <div class="kpi-sub">Require immediate outreach</div>
+    </div>
+    <div class="kpi high">
+      <div class="kpi-label">High risk</div>
+      <div class="kpi-value amber">957</div>
+      <div class="kpi-sub">Schedule call this week</div>
+    </div>
+    <div class="kpi mrr">
+      <div class="kpi-label">MRR at risk</div>
+      <div class="kpi-value blue">$222K</div>
+      <div class="kpi-sub">Monthly recurring revenue</div>
+    </div>
+    <div class="kpi model">
+      <div class="kpi-label">PR-AUC</div>
+      <div class="kpi-value green">0.161</div>
+      <div class="kpi-sub">Precision-recall score</div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="charts">
+
+    <div class="chart-card">
+      <div class="card-header">
+        <span class="card-title">Churn probability distribution</span>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="histChart"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <div class="card-header">
+        <span class="card-title">MRR at risk by plan</span>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="planChart"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <div class="card-header">
+        <span class="card-title">Risk tier breakdown</span>
+      </div>
+      <div style="padding-top:16px">
+        <div class="risk-row">
+          <span class="risk-label" style="color:#fca5a5">CRITICAL</span>
+          <div class="risk-bar-wrap"><div class="risk-bar" style="width:4.66%;background:var(--red)"></div></div>
+          <span class="risk-count">233</span>
+        </div>
+        <div class="risk-row">
+          <span class="risk-label" style="color:#fcd34d">HIGH</span>
+          <div class="risk-bar-wrap"><div class="risk-bar" style="width:19.14%;background:var(--amber)"></div></div>
+          <span class="risk-count">957</span>
+        </div>
+        <div class="risk-row">
+          <span class="risk-label" style="color:#93c5fd">MEDIUM</span>
+          <div class="risk-bar-wrap"><div class="risk-bar" style="width:34.98%;background:var(--accent)"></div></div>
+          <span class="risk-count">1,749</span>
+        </div>
+        <div class="risk-row">
+          <span class="risk-label" style="color:#86efac">LOW</span>
+          <div class="risk-bar-wrap"><div class="risk-bar" style="width:41.22%;background:var(--green)"></div></div>
+          <span class="risk-count">2,061</span>
+        </div>
+        <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+          <div class="card-title" style="margin-bottom:12px">Avg churn by region</div>
+          <div class="risk-row">
+            <span class="risk-label">NA</span>
+            <div class="risk-bar-wrap"><div class="risk-bar" style="width:38%;background:var(--accent)"></div></div>
+            <span class="risk-count">38.0%</span>
+          </div>
+          <div class="risk-row">
+            <span class="risk-label">EU</span>
+            <div class="risk-bar-wrap"><div class="risk-bar" style="width:32.7%;background:var(--accent)"></div></div>
+            <span class="risk-count">32.7%</span>
+          </div>
+          <div class="risk-row">
+            <span class="risk-label">APAC</span>
+            <div class="risk-bar-wrap"><div class="risk-bar" style="width:31.6%;background:var(--accent)"></div></div>
+            <span class="risk-count">31.6%</span>
+          </div>
+          <div class="risk-row">
+            <span class="risk-label">LATAM</span>
+            <div class="risk-bar-wrap"><div class="risk-bar" style="width:30.6%;background:var(--accent)"></div></div>
+            <span class="risk-count">30.6%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- At-Risk Customer Table -->
+  <div class="table-card">
+    <div class="table-header">
+      <span class="card-title">At-risk customer queue</span>
+      <input class="search-input" id="searchInput" placeholder="Search customer ID..." oninput="filterTable()">
+    </div>
+    <div class="filter-row">
+      <button class="filter-btn active" onclick="setFilter('ALL', this)">All</button>
+      <button class="filter-btn" onclick="setFilter('CRITICAL', this)">🔴 Critical</button>
+      <button class="filter-btn" onclick="setFilter('HIGH', this)">🟡 High</button>
+      <button class="filter-btn" onclick="setFilter('MEDIUM', this)">🔵 Medium</button>
+    </div>
+    <div style="overflow-x:auto">
+      <table id="riskTable">
+        <thead>
+          <tr>
+            <th onclick="sortTable('customer_id')">Customer ↕</th>
+            <th onclick="sortTable('churn_probability')">Churn prob ↕</th>
+            <th onclick="sortTable('risk_tier')">Risk tier ↕</th>
+            <th onclick="sortTable('monthly_mrr')">MRR ↕</th>
+            <th onclick="sortTable('mrr_at_risk')">MRR at risk ↕</th>
+            <th onclick="sortTable('plan')">Plan ↕</th>
+            <th onclick="sortTable('days_since_login')">Last login ↕</th>
+            <th onclick="sortTable('sessions_30d')">Sessions 30d ↕</th>
+            <th>Recommended action</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+    <div class="pagination">
+      <span id="pageInfo">Showing 1–15 of 50</span>
+      <div class="page-btns">
+        <button class="page-btn" id="prevBtn" onclick="changePage(-1)">← Prev</button>
+        <button class="page-btn active" id="p1" onclick="goPage(1)">1</button>
+        <button class="page-btn" id="p2" onclick="goPage(2)">2</button>
+        <button class="page-btn" id="p3" onclick="goPage(3)">3</button>
+        <button class="page-btn" id="p4" onclick="goPage(4)">4</button>
+        <button class="page-btn" id="nextBtn" onclick="changePage(1)">Next →</button>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <span>Model: XGBoost v1.0 · Features: 19 engineered signals · Retrain: monthly</span>
+    <span>Last scored: <span id="lastRun"></span></span>
+  </footer>
+
+</div>
+
+<script>
+// ── Data ──────────────────────────────────────────────────────────────────────
+const DATA = {"summary":{"total_customers":5000,"critical":233,"high":957,"medium":1749,"low":2061,"total_mrr_at_risk":221993.8,"avg_churn_prob":0.33612954,"model_roc_auc":0.6275,"model_pr_auc":0.1607},"by_plan":[{"plan":"enterprise","customers":482,"avg_churn":0.341,"mrr_at_risk":82087.07},{"plan":"growth","customers":1558,"avg_churn":0.339,"mrr_at_risk":41700.58},{"plan":"pro","customers":1176,"avg_churn":0.348,"mrr_at_risk":81409.65},{"plan":"starter","customers":1784,"avg_churn":0.325,"mrr_at_risk":16796.5}],"histogram":[{"x":0.0,"count":0},{"x":0.05,"count":39},{"x":0.1,"count":378},{"x":0.15,"count":769},{"x":0.2,"count":874},{"x":0.25,"count":649},{"x":0.3,"count":493},{"x":0.35,"count":346},{"x":0.4,"count":262},{"x":0.45,"count":215},{"x":0.5,"count":207},{"x":0.55,"count":202},{"x":0.6,"count":179},{"x":0.65,"count":154},{"x":0.7,"count":107},{"x":0.75,"count":85},{"x":0.8,"count":36},{"x":0.85,"count":4},{"x":0.9,"count":1},{"x":0.95,"count":0}],"by_region":[{"region":"APAC","avg_churn":0.316,"count":804},{"region":"EU","avg_churn":0.327,"count":1425},{"region":"LATAM","avg_churn":0.306,"count":509}],"top_risk":[{"customer_id":"CUST_01516","churn_probability":0.9166,"risk_tier":"CRITICAL","monthly_mrr":199,"mrr_at_risk":182.39,"plan":"pro","days_since_login":24,"sessions_30d":18,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_01581","churn_probability":0.8941,"risk_tier":"CRITICAL","monthly_mrr":499,"mrr_at_risk":446.14,"plan":"enterprise","days_since_login":11,"sessions_30d":15,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_00943","churn_probability":0.8606,"risk_tier":"CRITICAL","monthly_mrr":199,"mrr_at_risk":171.26,"plan":"pro","days_since_login":0,"sessions_30d":21,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_02352","churn_probability":0.858,"risk_tier":"CRITICAL","monthly_mrr":79,"mrr_at_risk":67.78,"plan":"growth","days_since_login":28,"sessions_30d":14,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_00551","churn_probability":0.8565,"risk_tier":"CRITICAL","monthly_mrr":79,"mrr_at_risk":67.66,"plan":"growth","days_since_login":0,"sessions_30d":23,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_02183","churn_probability":0.844,"risk_tier":"CRITICAL","monthly_mrr":199,"mrr_at_risk":167.96,"plan":"pro","days_since_login":2,"sessions_30d":14,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_01459","churn_probability":0.8415,"risk_tier":"CRITICAL","monthly_mrr":29,"mrr_at_risk":24.4,"plan":"starter","days_since_login":0,"sessions_30d":18,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_01294","churn_probability":0.8405,"risk_tier":"CRITICAL","monthly_mrr":199,"mrr_at_risk":167.26,"plan":"pro","days_since_login":7,"sessions_30d":25,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_02353","churn_probability":0.8389,"risk_tier":"CRITICAL","monthly_mrr":79,"mrr_at_risk":66.27,"plan":"growth","days_since_login":3,"sessions_30d":20,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_04345","churn_probability":0.8384,"risk_tier":"CRITICAL","monthly_mrr":499,"mrr_at_risk":418.34,"plan":"enterprise","days_since_login":4,"sessions_30d":19,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_00671","churn_probability":0.8329,"risk_tier":"CRITICAL","monthly_mrr":29,"mrr_at_risk":24.15,"plan":"starter","days_since_login":6,"sessions_30d":18,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_04014","churn_probability":0.829,"risk_tier":"CRITICAL","monthly_mrr":29,"mrr_at_risk":24.04,"plan":"starter","days_since_login":15,"sessions_30d":16,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_01809","churn_probability":0.8289,"risk_tier":"CRITICAL","monthly_mrr":29,"mrr_at_risk":24.04,"plan":"starter","days_since_login":2,"sessions_30d":10,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_03459","churn_probability":0.8251,"risk_tier":"CRITICAL","monthly_mrr":29,"mrr_at_risk":23.93,"plan":"starter","days_since_login":9,"sessions_30d":24,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_02777","churn_probability":0.8246,"risk_tier":"CRITICAL","monthly_mrr":199,"mrr_at_risk":164.1,"plan":"pro","days_since_login":3,"sessions_30d":23,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_01119","churn_probability":0.8222,"risk_tier":"CRITICAL","monthly_mrr":199,"mrr_at_risk":163.61,"plan":"pro","days_since_login":4,"sessions_30d":19,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_00626","churn_probability":0.822,"risk_tier":"CRITICAL","monthly_mrr":79,"mrr_at_risk":64.94,"plan":"growth","days_since_login":0,"sessions_30d":18,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_03114","churn_probability":0.822,"risk_tier":"CRITICAL","monthly_mrr":79,"mrr_at_risk":64.94,"plan":"growth","days_since_login":5,"sessions_30d":22,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_03324","churn_probability":0.8218,"risk_tier":"CRITICAL","monthly_mrr":29,"mrr_at_risk":23.83,"plan":"starter","days_since_login":4,"sessions_30d":18,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_00619","churn_probability":0.8218,"risk_tier":"CRITICAL","monthly_mrr":29,"mrr_at_risk":23.83,"plan":"starter","days_since_login":8,"sessions_30d":19,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_04423","churn_probability":0.8202,"risk_tier":"CRITICAL","monthly_mrr":79,"mrr_at_risk":64.8,"plan":"growth","days_since_login":4,"sessions_30d":14,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_03207","churn_probability":0.8193,"risk_tier":"CRITICAL","monthly_mrr":29,"mrr_at_risk":23.76,"plan":"starter","days_since_login":25,"sessions_30d":15,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_04125","churn_probability":0.819,"risk_tier":"CRITICAL","monthly_mrr":499,"mrr_at_risk":408.68,"plan":"enterprise","days_since_login":7,"sessions_30d":23,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_01044","churn_probability":0.8172,"risk_tier":"CRITICAL","monthly_mrr":199,"mrr_at_risk":162.63,"plan":"pro","days_since_login":4,"sessions_30d":16,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_02513","churn_probability":0.8149,"risk_tier":"CRITICAL","monthly_mrr":29,"mrr_at_risk":23.63,"plan":"starter","days_since_login":6,"sessions_30d":23,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_01007","churn_probability":0.8147,"risk_tier":"CRITICAL","monthly_mrr":29,"mrr_at_risk":23.63,"plan":"starter","days_since_login":0,"sessions_30d":20,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_04078","churn_probability":0.814,"risk_tier":"CRITICAL","monthly_mrr":199,"mrr_at_risk":161.99,"plan":"pro","days_since_login":2,"sessions_30d":22,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_00467","churn_probability":0.8136,"risk_tier":"CRITICAL","monthly_mrr":199,"mrr_at_risk":161.91,"plan":"pro","days_since_login":4,"sessions_30d":21,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_01039","churn_probability":0.8128,"risk_tier":"CRITICAL","monthly_mrr":199,"mrr_at_risk":161.74,"plan":"pro","days_since_login":6,"sessions_30d":18,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_01885","churn_probability":0.8113,"risk_tier":"CRITICAL","monthly_mrr":499,"mrr_at_risk":404.84,"plan":"enterprise","days_since_login":4,"sessions_30d":19,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_02934","churn_probability":0.8092,"risk_tier":"CRITICAL","monthly_mrr":29,"mrr_at_risk":23.47,"plan":"starter","days_since_login":0,"sessions_30d":17,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_02673","churn_probability":0.8088,"risk_tier":"CRITICAL","monthly_mrr":79,"mrr_at_risk":63.9,"plan":"growth","days_since_login":1,"sessions_30d":18,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_04357","churn_probability":0.8084,"risk_tier":"CRITICAL","monthly_mrr":29,"mrr_at_risk":23.44,"plan":"starter","days_since_login":19,"sessions_30d":20,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_00188","churn_probability":0.8078,"risk_tier":"CRITICAL","monthly_mrr":499,"mrr_at_risk":403.08,"plan":"enterprise","days_since_login":15,"sessions_30d":14,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_01893","churn_probability":0.8066,"risk_tier":"CRITICAL","monthly_mrr":79,"mrr_at_risk":63.72,"plan":"growth","days_since_login":4,"sessions_30d":18,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_04826","churn_probability":0.8064,"risk_tier":"CRITICAL","monthly_mrr":79,"mrr_at_risk":63.71,"plan":"growth","days_since_login":6,"sessions_30d":19,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_02345","churn_probability":0.8039,"risk_tier":"CRITICAL","monthly_mrr":29,"mrr_at_risk":23.31,"plan":"starter","days_since_login":4,"sessions_30d":23,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_00892","churn_probability":0.8028,"risk_tier":"CRITICAL","monthly_mrr":79,"mrr_at_risk":63.43,"plan":"growth","days_since_login":1,"sessions_30d":23,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_04500","churn_probability":0.8023,"risk_tier":"CRITICAL","monthly_mrr":79,"mrr_at_risk":63.38,"plan":"growth","days_since_login":0,"sessions_30d":18,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_00775","churn_probability":0.8018,"risk_tier":"CRITICAL","monthly_mrr":79,"mrr_at_risk":63.34,"plan":"growth","days_since_login":2,"sessions_30d":18,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_03364","churn_probability":0.8017,"risk_tier":"CRITICAL","monthly_mrr":79,"mrr_at_risk":63.33,"plan":"growth","days_since_login":6,"sessions_30d":17,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_02009","churn_probability":0.7999,"risk_tier":"CRITICAL","monthly_mrr":29,"mrr_at_risk":23.2,"plan":"starter","days_since_login":11,"sessions_30d":28,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_01021","churn_probability":0.7996,"risk_tier":"CRITICAL","monthly_mrr":199,"mrr_at_risk":159.12,"plan":"pro","days_since_login":2,"sessions_30d":17,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_00124","churn_probability":0.799,"risk_tier":"CRITICAL","monthly_mrr":499,"mrr_at_risk":398.71,"plan":"enterprise","days_since_login":6,"sessions_30d":16,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_00782","churn_probability":0.7987,"risk_tier":"CRITICAL","monthly_mrr":79,"mrr_at_risk":63.1,"plan":"growth","days_since_login":16,"sessions_30d":19,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_03410","churn_probability":0.7971,"risk_tier":"CRITICAL","monthly_mrr":79,"mrr_at_risk":62.97,"plan":"growth","days_since_login":2,"sessions_30d":16,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_02431","churn_probability":0.7961,"risk_tier":"CRITICAL","monthly_mrr":79,"mrr_at_risk":62.89,"plan":"growth","days_since_login":2,"sessions_30d":20,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_04795","churn_probability":0.7961,"risk_tier":"CRITICAL","monthly_mrr":79,"mrr_at_risk":62.89,"plan":"growth","days_since_login":5,"sessions_30d":23,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_04496","churn_probability":0.796,"risk_tier":"CRITICAL","monthly_mrr":79,"mrr_at_risk":62.88,"plan":"growth","days_since_login":2,"sessions_30d":21,"recommended_action":"Immediate CSM outreach + retention offer"},{"customer_id":"CUST_00326","churn_probability":0.7949,"risk_tier":"CRITICAL","monthly_mrr":29,"mrr_at_risk":23.05,"plan":"starter","days_since_login":7,"sessions_30d":18,"recommended_action":"Immediate CSM outreach + retention offer"}]};
+
+// ── Charts ────────────────────────────────────────────────────────────────────
+const chartDefaults = {
+  color: '#94a3b8',
+  plugins: { legend: { display: false }, tooltip: {
+    backgroundColor: '#1a1d27', borderColor: '#1e2540', borderWidth: 1,
+    titleColor: '#e2e8f0', bodyColor: '#94a3b8', padding: 10,
+  }},
+  scales: {
+    x: { grid: { color: '#1e2540' }, ticks: { color: '#64748b', font: { family: "'IBM Plex Mono'" } } },
+    y: { grid: { color: '#1e2540' }, ticks: { color: '#64748b', font: { family: "'IBM Plex Mono'" } } },
+  }
+};
+
+// Histogram
+new Chart(document.getElementById('histChart'), {
+  type: 'bar',
+  data: {
+    labels: DATA.histogram.map(d => d.x.toFixed(2)),
+    datasets: [{
+      data: DATA.histogram.map(d => d.count),
+      backgroundColor: DATA.histogram.map(d =>
+        d.x >= 0.7 ? 'rgba(239,68,68,0.75)' :
+        d.x >= 0.45 ? 'rgba(245,158,11,0.70)' :
+        d.x >= 0.25 ? 'rgba(79,110,247,0.65)' :
+        'rgba(34,197,94,0.55)'
+      ),
+      borderRadius: 3, borderSkipped: false,
+    }]
+  },
+  options: { ...chartDefaults, responsive: true, maintainAspectRatio: false,
+    plugins: { ...chartDefaults.plugins, tooltip: { ...chartDefaults.plugins.tooltip,
+      callbacks: { label: ctx => ` ${ctx.raw} customers` }
+    }},
+  }
+});
+
+// Plan MRR bar
+new Chart(document.getElementById('planChart'), {
+  type: 'bar',
+  data: {
+    labels: DATA.by_plan.map(d => d.plan),
+    datasets: [{
+      data: DATA.by_plan.map(d => Math.round(d.mrr_at_risk)),
+      backgroundColor: ['rgba(124,58,237,0.7)','rgba(79,110,247,0.7)','rgba(6,182,212,0.7)','rgba(34,197,94,0.6)'],
+      borderRadius: 6, borderSkipped: false,
+    }]
+  },
+  options: { ...chartDefaults, indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+    plugins: { ...chartDefaults.plugins, tooltip: { ...chartDefaults.plugins.tooltip,
+      callbacks: { label: ctx => ` $${ctx.raw.toLocaleString()}/mo at risk` }
+    }},
+  }
+});
+
+// ── Table ─────────────────────────────────────────────────────────────────────
+let allRows = DATA.top_risk;
+let filteredRows = [...allRows];
+let sortKey = 'churn_probability', sortDir = -1;
+let currentPage = 1;
+const PAGE_SIZE = 15;
+let tierFilter = 'ALL';
+
+function probColor(p) {
+  if (p >= 0.7) return 'var(--red)';
+  if (p >= 0.45) return 'var(--amber)';
+  if (p >= 0.25) return '#60a5fa';
+  return 'var(--green)';
+}
+
+function renderTable() {
+  const start = (currentPage - 1) * PAGE_SIZE;
+  const rows = filteredRows.slice(start, start + PAGE_SIZE);
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--accent)">${r.customer_id}</td>
+      <td>
+        <div class="prob-bar-cell">
+          <div class="prob-bar-bg"><div class="prob-bar-fill" style="width:${r.churn_probability*100}%;background:${probColor(r.churn_probability)}"></div></div>
+          <span class="prob-val" style="color:${probColor(r.churn_probability)}">${(r.churn_probability*100).toFixed(1)}%</span>
+        </div>
+      </td>
+      <td><span class="tier-badge tier-${r.risk_tier}">${r.risk_tier}</span></td>
+      <td style="font-family:var(--mono)">$${r.monthly_mrr}</td>
+      <td style="font-family:var(--mono);color:var(--amber)">$${r.mrr_at_risk.toFixed(0)}</td>
+      <td><span class="plan-tag">${r.plan}</span></td>
+      <td style="font-family:var(--mono);color:${r.days_since_login > 14 ? 'var(--red)' : 'var(--text2)'}">${r.days_since_login}d ago</td>
+      <td style="font-family:var(--mono)">${r.sessions_30d}</td>
+      <td><span class="action-text">${r.recommended_action}</span></td>
+    </tr>
+  `).join('');
+
+  const total = filteredRows.length;
+  document.getElementById('pageInfo').textContent =
+    `Showing ${Math.min(start+1,total)}–${Math.min(start+PAGE_SIZE,total)} of ${total}`;
+
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+  document.getElementById('prevBtn').disabled = currentPage === 1;
+  document.getElementById('nextBtn').disabled = currentPage >= totalPages;
+  [1,2,3,4].forEach(p => {
+    const el = document.getElementById('p'+p);
+    el.style.display = p <= totalPages ? '' : 'none';
+    el.classList.toggle('active', p === currentPage);
+  });
+}
+
+function filterTable() {
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  filteredRows = allRows.filter(r =>
+    (tierFilter === 'ALL' || r.risk_tier === tierFilter) &&
+    (!q || r.customer_id.toLowerCase().includes(q))
+  );
+  currentPage = 1;
+  renderTable();
+}
+
+function setFilter(tier, btn) {
+  tierFilter = tier;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  filterTable();
+}
+
+function sortTable(key) {
+  if (sortKey === key) sortDir *= -1; else { sortKey = key; sortDir = -1; }
+  allRows.sort((a, b) => {
+    const av = a[key], bv = b[key];
+    return typeof av === 'string' ? av.localeCompare(bv) * sortDir : (av - bv) * sortDir;
+  });
+  filterTable();
+}
+
+function changePage(d) { currentPage += d; renderTable(); }
+function goPage(p) { currentPage = p; renderTable(); }
+
+renderTable();
+document.getElementById('lastRun').textContent = new Date().toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit'});
+</script>
+</body>
+</html>
